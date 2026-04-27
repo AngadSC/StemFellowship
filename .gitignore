@@ -1,0 +1,8 @@
+data/raw/
+data/processed/
+*.jpg
+*.jpeg
+*.png
+.venv/
+__pycache__/
+.env
