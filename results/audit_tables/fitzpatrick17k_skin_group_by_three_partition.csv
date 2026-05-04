@@ -1,0 +1,5 @@
+skin_group,benign,malignant,non-neoplastic
+dark_FST5_6,203,208,1757
+light_FST1_2,1115,1195,5445
+medium_FST3_4,842,757,4490
+unknown,74,103,388
