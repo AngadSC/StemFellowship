@@ -1,0 +1,64 @@
+paths:
+  raw_dir: data/raw/physionet.org/files/mimiciii/1.4
+  interim_dir: data/interim
+  processed_dir: data/processed
+  outputs_dir: outputs
+  models_dir: models
+
+files:
+  admissions: ADMISSIONS.csv.gz
+  patients: PATIENTS.csv.gz
+  notes: NOTEEVENTS.csv.gz
+  diagnoses: DIAGNOSES_ICD.csv.gz
+  diagnosis_dictionary: D_ICD_DIAGNOSES.csv.gz
+
+cohort:
+  note_category: Discharge summary
+  max_note_length: 512
+  min_group_positive_count: 50
+
+labels:
+  heart_failure:
+    positive_icd9_prefixes:
+      - "428"
+
+  sepsis:
+    positive_icd9_codes:
+      - "99591"
+      - "99592"
+      - "78552"
+
+  diabetes:
+    positive_icd9_prefixes:
+      - "250"
+
+  copd:
+    positive_icd9_prefixes:
+      - "490"
+      - "491"
+      - "492"
+      - "496"
+
+  acute_kidney_injury:
+    positive_icd9_codes:
+      - "5845"
+      - "5846"
+      - "5847"
+      - "5848"
+      - "5849"
+
+active_label: heart_failure
+
+groups:
+  baseline_group: white_english
+  comparison_groups:
+    - black
+    - hispanic
+    - non_english
+
+model:
+  base_model: emilyalsentzer/Bio_ClinicalBERT
+  num_epochs: 3
+  batch_size: 8
+  learning_rate: 2e-5
+  random_seed: 42
