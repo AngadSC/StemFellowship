@@ -28,3 +28,43 @@ MIMIC/models/checkpoints/
 __pycache__/
 .ipynb_checkpoints/
 .env
+
+# Protected MIMIC data
+data/raw/
+data/interim/
+data/processed/
+*.csv
+*.csv.gz
+*.parquet
+*.db
+*.sqlite
+*.zip
+*.tar.gz
+
+# Model files
+models/
+checkpoints/
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs/cache
+logs/
+.cache/
+wandb/
+runs/
+
+# OS
+.DS_Store
+Thumbs.db
