@@ -18,8 +18,8 @@ data/processed/
 *.tar.gz
 
 # model artifacts
-models/
 checkpoints/
+MIMIC/models/checkpoints/
 *.pt
 *.pth
 *.bin

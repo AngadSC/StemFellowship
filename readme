@@ -1,0 +1,14 @@
+wget.exe -c --user jgogia --ask-password https://physionet.org/files/mimiciii/1.4/ADMISSIONS.csv.gz
+wget.exe -c --user jgogia --ask-password https://physionet.org/files/mimiciii/1.4/PATIENTS.csv.gz
+wget.exe -c --user jgogia --ask-password https://physionet.org/files/mimiciii/1.4/NOTEEVENTS.csv.gz
+this third one will take a couple hours 
+
+wget.exe -c --user jgogia --ask-password https://physionet.org/files/mimiciii/1.4/DIAGNOSES_ICD.csv.gz
+wget.exe -c --user jgogia --ask-password https://physionet.org/files/mimiciii/1.4/D_ICD_DIAGNOSES.csv.gz
+
+
+
+go to repo, so cd C:\Users\Angad\Desktop\StemFellowship\MIMIC\data\raw
+
+or whatever ur path is but go into data/raw
+and run the commands above 
