@@ -7,3 +7,24 @@ data/processed/
 .venv/
 __pycache__/
 .env
+data/raw/
+data/processed/
+*.csv.gz
+*.csv
+*.parquet
+*.db
+*.sqlite
+*.zip
+*.tar.gz
+
+# model artifacts
+models/
+checkpoints/
+*.pt
+*.pth
+*.bin
+
+# logs/cache
+__pycache__/
+.ipynb_checkpoints/
+.env
