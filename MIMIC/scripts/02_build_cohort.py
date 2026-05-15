@@ -13,12 +13,13 @@ def main():
 
     df = build_cohort(cfg, root)
 
-    output_path = out_dir / f"{cfg['label']['task_name']}_cohort.parquet"
+    label_name = cfg["active_label"]
+    output_path = out_dir / f"{label_name}_cohort.parquet"
     df.to_parquet(output_path, index=False)
 
     print(f"Saved cohort to: {output_path}")
     print(df.shape)
-    print(df[cfg["label"]["task_name"]].value_counts())
+    print(df[label_name].value_counts())
     print(df["fairness_group"].value_counts())
 
 

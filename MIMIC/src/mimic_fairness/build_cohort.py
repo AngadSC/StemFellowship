@@ -18,11 +18,13 @@ def build_cohort(cfg: dict, root: Path) -> pd.DataFrame:
         category=cfg["cohort"]["note_category"],
     )
 
-    label_name = cfg["label"]["task_name"]
+    label_name = cfg["active_label"]
+    label_cfg = cfg["labels"][label_name]
     labels = make_binary_label(
         diagnoses,
-        cfg["label"]["positive_icd9_prefixes"],
-        label_name,
+        label_name=label_name,
+        positive_icd9_prefixes=label_cfg.get("positive_icd9_prefixes"),
+        positive_icd9_codes=label_cfg.get("positive_icd9_codes"),
     )
 
     df = notes.merge(admissions, on=["SUBJECT_ID", "HADM_ID"], how="inner")
