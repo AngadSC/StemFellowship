@@ -2,6 +2,7 @@
 torch==2.6.0
 transformers==4.45.0
 scikit-learn==1.6.0
+accelerate==0.31.0
 
 # Data processing
 pandas==2.2.3

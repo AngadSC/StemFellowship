@@ -7,7 +7,7 @@ def main():
     root = project_root()
     cfg = load_config()
 
-    label = cfg["label"]["task_name"]
+    label = cfg["active_label"]
     cohort_path = root / cfg["paths"]["interim_dir"] / f"{label}_cohort.parquet"
 
     df = pd.read_parquet(cohort_path)

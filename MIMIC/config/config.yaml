@@ -1,5 +1,5 @@
 paths:
-  raw_dir: data/raw/physionet.org/files/mimiciii/1.4
+  raw_dir: data/raw
   interim_dir: data/interim
   processed_dir: data/processed
   outputs_dir: outputs
@@ -60,5 +60,5 @@ model:
   base_model: emilyalsentzer/Bio_ClinicalBERT
   num_epochs: 3
   batch_size: 8
-  learning_rate: 2e-5
+  learning_rate: 0.00002
   random_seed: 42
