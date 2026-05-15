@@ -27,4 +27,9 @@ def read_notes(raw_dir: Path, filename: str, category: str = "Discharge summary"
     notes = notes.dropna(subset=["HADM_ID", "TEXT"])
     notes["HADM_ID"] = notes["HADM_ID"].astype(int)
 
+    notes["text_length"] = notes["TEXT"].str.len()
+    notes = notes.sort_values("text_length", ascending=False)
+    notes = notes.drop_duplicates(subset=["HADM_ID"], keep="first")
+    notes = notes.drop(columns=["text_length"])
+
     return notes
