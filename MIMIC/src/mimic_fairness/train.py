@@ -4,6 +4,7 @@ from pathlib import Path
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.amp import autocast, GradScaler
 from transformers import AutoModelForSequenceClassification
 
 from mimic_fairness.preprocessing import load_tokenizer
@@ -41,8 +42,8 @@ def train_model(
     train_dataset = torch.utils.data.Subset(dataset, train_idx)
     val_dataset = torch.utils.data.Subset(dataset, val_idx)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, pin_memory=True)
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -52,6 +53,7 @@ def train_model(
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     loss_fn = torch.nn.CrossEntropyLoss()
+    scaler = GradScaler('cuda')
 
     best_val_loss = float("inf")
     best_model_state = None
@@ -65,10 +67,12 @@ def train_model(
             labels = batch["label"].to(device)
 
             optimizer.zero_grad()
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            loss = loss_fn(outputs.logits, labels)
-            loss.backward()
-            optimizer.step()
+            with autocast('cuda'):
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+                loss = loss_fn(outputs.logits, labels)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
             epoch_loss += loss.item()
 
@@ -162,6 +166,7 @@ def train_model_with_weights(
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     loss_fn = torch.nn.CrossEntropyLoss()
+    scaler = GradScaler('cuda')
 
     best_val_loss = float("inf")
     best_model_state = None
@@ -175,10 +180,12 @@ def train_model_with_weights(
             labels = batch["label"].to(device)
 
             optimizer.zero_grad()
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            loss = loss_fn(outputs.logits, labels)
-            loss.backward()
-            optimizer.step()
+            with autocast('cuda'):
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+                loss = loss_fn(outputs.logits, labels)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
             epoch_loss += loss.item()
 
