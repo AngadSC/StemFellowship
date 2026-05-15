@@ -54,11 +54,13 @@ def train_model(
         per_device_eval_batch_size=batch_size,
         learning_rate=learning_rate,
         weight_decay=0.01,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="loss",
         seed=random_seed,
+        fp16=False,
+        bf16=False,
     )
 
     trainer = Trainer(
