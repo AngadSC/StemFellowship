@@ -1,9 +1,0 @@
-condition,total_positive,light_positive,medium_positive,dark_positive,aian_positive,white_positive,black_positive,asian_positive,hispanic_positive,skin_tone_status,aian_status
-Eczema,1056,750,253,48,25,436,83,26,84,usable,maybe_usable
-Allergic Contact Dermatitis,873,651,201,17,17,379,46,22,70,underpowered,underpowered
-Insect Bite,403,308,90,4,9,170,18,8,34,underpowered,underpowered
-Urticaria,332,228,99,5,4,117,20,16,29,underpowered,underpowered
-Psoriasis,308,209,87,11,7,118,29,11,15,underpowered,underpowered
-Folliculitis,268,195,67,6,5,114,19,4,22,underpowered,underpowered
-Irritant Contact Dermatitis,249,201,45,3,4,119,10,4,28,underpowered,underpowered
-Tinea,206,139,58,8,2,89,20,6,16,underpowered,underpowered
