@@ -49,4 +49,6 @@ def build_cohort(cfg: dict, root: Path) -> pd.DataFrame:
         ]
     ].copy()
 
+    df = df.drop_duplicates(["SUBJECT_ID", "HADM_ID"], keep="first").reset_index(drop=True)
+
     return df
