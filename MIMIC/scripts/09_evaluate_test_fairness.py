@@ -2,9 +2,61 @@ import pandas as pd
 
 from mimic_fairness.paths import load_config, project_root
 from mimic_fairness.evaluate import evaluate_fairness
+from mimic_fairness.plots import plot_fairness_comparison
 
 
 KEY_COLUMNS = ["SUBJECT_ID", "HADM_ID"]
+HELDOUT_PLOT_METRICS = [
+    "accuracy",
+    "auc",
+    "fnr",
+    "fpr",
+    "recall",
+    "specificity",
+    "precision",
+    "predicted_positive_rate",
+]
+
+
+def _save_compat_copy(source_path, compat_path) -> None:
+    if source_path == compat_path:
+        return
+    pd.read_parquet(source_path).to_parquet(compat_path, index=False)
+
+
+def _save_long_metric_summary(
+    baseline_results: pd.DataFrame,
+    reweighted_results: pd.DataFrame,
+    output_path,
+) -> None:
+    baseline = baseline_results.copy()
+    baseline.insert(0, "model", "baseline")
+
+    reweighted = reweighted_results.copy()
+    reweighted.insert(0, "model", "reweighted")
+
+    pd.concat([baseline, reweighted], ignore_index=True).to_csv(output_path, index=False)
+
+
+def _save_heldout_plots(
+    baseline_results: pd.DataFrame,
+    reweighted_results: pd.DataFrame,
+    plots_dir,
+) -> None:
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    for metric in HELDOUT_PLOT_METRICS:
+        if metric not in baseline_results.columns or metric not in reweighted_results.columns:
+            continue
+
+        output_path = plots_dir / f"heldout_test_{metric}_baseline_vs_reweighted.png"
+        plot_fairness_comparison(
+            baseline_results,
+            reweighted_results,
+            str(output_path),
+            metric=metric,
+            title=f"Held-Out Test {metric.replace('_', ' ').title()}: Baseline vs Reweighted",
+        )
 
 
 def _validate_paired_prediction_files(baseline_path, reweighted_path) -> None:
@@ -62,10 +114,12 @@ def main() -> None:
     if not reweighted_model_path.exists():
         raise FileNotFoundError(f"Reweighted model not found at {reweighted_model_path}")
 
-    results_dir = root / cfg["paths"]["outputs_dir"] / "tables"
+    outputs_dir = root / cfg["paths"]["outputs_dir"]
+    results_dir = outputs_dir / "tables"
+    plots_dir = outputs_dir / "plots"
     results_dir.mkdir(parents=True, exist_ok=True)
-    baseline_predictions_path = results_dir / "test_baseline_predictions.parquet"
-    reweighted_predictions_path = results_dir / "test_reweighted_predictions.parquet"
+    baseline_predictions_path = results_dir / "heldout_test_baseline_predictions.parquet"
+    reweighted_predictions_path = results_dir / "heldout_test_reweighted_predictions.parquet"
 
     print("Evaluating baseline model on held-out test split...")
     baseline_results = evaluate_fairness(
@@ -93,6 +147,23 @@ def main() -> None:
 
     _validate_paired_prediction_files(baseline_predictions_path, reweighted_predictions_path)
 
+    _save_compat_copy(
+        baseline_predictions_path,
+        results_dir / "test_baseline_predictions.parquet",
+    )
+    _save_compat_copy(
+        reweighted_predictions_path,
+        results_dir / "test_reweighted_predictions.parquet",
+    )
+
+    baseline_results.to_parquet(
+        results_dir / "heldout_test_baseline_fairness_results.parquet",
+        index=False,
+    )
+    reweighted_results.to_parquet(
+        results_dir / "heldout_test_reweighted_fairness_results.parquet",
+        index=False,
+    )
     baseline_results.to_parquet(
         results_dir / "test_baseline_fairness_results.parquet",
         index=False,
@@ -112,11 +183,20 @@ def main() -> None:
         comparison["accuracy_reweighted"] - comparison["accuracy_baseline"]
     )
     comparison = comparison.sort_values("fnr_delta")
+    comparison.to_csv(results_dir / "heldout_test_fairness_comparison.csv", index=False)
     comparison.to_csv(results_dir / "test_fairness_comparison.csv", index=False)
+
+    _save_long_metric_summary(
+        baseline_results,
+        reweighted_results,
+        results_dir / "heldout_test_group_metrics_long.csv",
+    )
+    _save_heldout_plots(baseline_results, reweighted_results, plots_dir)
 
     print("\nHeld-out test fairness comparison:")
     print(comparison.to_string(index=False))
     print(f"\nSaved held-out test results to {results_dir}")
+    print(f"Saved held-out test plots to {plots_dir}")
 
 
 if __name__ == "__main__":

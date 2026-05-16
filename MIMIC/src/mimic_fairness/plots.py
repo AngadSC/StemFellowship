@@ -8,6 +8,7 @@ def plot_fairness_comparison(
     reweighted_df: pd.DataFrame,
     output_path: str,
     metric: str = "fnr",
+    title: str | None = None,
 ) -> None:
     """
     Plot grouped bar chart: baseline vs reweighted for each fairness group.
@@ -33,7 +34,7 @@ def plot_fairness_comparison(
 
     ax.set_xlabel("Fairness Group")
     ax.set_ylabel(metric.upper())
-    ax.set_title(f"Fairness Metric Comparison: {metric.upper()}")
+    ax.set_title(title or f"Fairness Metric Comparison: {metric.upper()}")
     ax.set_xticks(x)
     ax.set_xticklabels(groups, rotation=45, ha="right")
     ax.legend()
