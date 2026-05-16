@@ -1,5 +1,48 @@
+import pandas as pd
+
 from mimic_fairness.paths import load_config, project_root
 from mimic_fairness.evaluate import evaluate_fairness
+
+
+KEY_COLUMNS = ["SUBJECT_ID", "HADM_ID"]
+
+
+def _validate_paired_prediction_files(baseline_path, reweighted_path) -> None:
+    baseline = pd.read_parquet(baseline_path, columns=KEY_COLUMNS + ["split"])
+    reweighted = pd.read_parquet(reweighted_path, columns=KEY_COLUMNS + ["split"])
+
+    if baseline["HADM_ID"].duplicated().any():
+        raise ValueError("Baseline test predictions contain duplicate HADM_ID values.")
+    if reweighted["HADM_ID"].duplicated().any():
+        raise ValueError("Reweighted test predictions contain duplicate HADM_ID values.")
+
+    if set(baseline["split"].unique()) != {"test"}:
+        raise ValueError("Baseline test predictions include non-test rows.")
+    if set(reweighted["split"].unique()) != {"test"}:
+        raise ValueError("Reweighted test predictions include non-test rows.")
+
+    baseline_keys = baseline[KEY_COLUMNS]
+    reweighted_keys = reweighted[KEY_COLUMNS]
+    if baseline_keys.equals(reweighted_keys):
+        print("Validated paired test predictions: identical SUBJECT_ID/HADM_ID order.")
+        return
+
+    paired = baseline_keys.merge(
+        reweighted_keys,
+        on=KEY_COLUMNS,
+        how="inner",
+        validate="one_to_one",
+    )
+    if len(paired) != len(baseline_keys) or len(paired) != len(reweighted_keys):
+        raise ValueError(
+            "Baseline and reweighted test predictions do not contain identical "
+            "SUBJECT_ID/HADM_ID pairs."
+        )
+
+    print(
+        "Validated paired test predictions: same SUBJECT_ID/HADM_ID set; downstream paired "
+        "tests merge by SUBJECT_ID/HADM_ID."
+    )
 
 
 def main() -> None:
@@ -21,6 +64,8 @@ def main() -> None:
 
     results_dir = root / cfg["paths"]["outputs_dir"] / "tables"
     results_dir.mkdir(parents=True, exist_ok=True)
+    baseline_predictions_path = results_dir / "test_baseline_predictions.parquet"
+    reweighted_predictions_path = results_dir / "test_reweighted_predictions.parquet"
 
     print("Evaluating baseline model on held-out test split...")
     baseline_results = evaluate_fairness(
@@ -31,7 +76,7 @@ def main() -> None:
         batch_size=cfg["model"]["batch_size"],
         split_path=str(split_path),
         split="test",
-        predictions_output_path=str(results_dir / "test_baseline_predictions.parquet"),
+        predictions_output_path=str(baseline_predictions_path),
     )
 
     print("\nEvaluating reweighted model on held-out test split...")
@@ -43,8 +88,10 @@ def main() -> None:
         batch_size=cfg["model"]["batch_size"],
         split_path=str(split_path),
         split="test",
-        predictions_output_path=str(results_dir / "test_reweighted_predictions.parquet"),
+        predictions_output_path=str(reweighted_predictions_path),
     )
+
+    _validate_paired_prediction_files(baseline_predictions_path, reweighted_predictions_path)
 
     baseline_results.to_parquet(
         results_dir / "test_baseline_fairness_results.parquet",

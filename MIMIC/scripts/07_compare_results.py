@@ -19,7 +19,12 @@ def main():
     if not reweighted_model_path.exists():
         raise FileNotFoundError(f"Reweighted model not found at {reweighted_model_path}")
 
-    print("Evaluating baseline model...")
+    print(
+        "EXPLORATORY FULL-COHORT COMPARISON: this uses all cohort rows and is "
+        "not the held-out test comparison."
+    )
+
+    print("Evaluating baseline model on full cohort...")
     baseline_results = evaluate_fairness(
         cohort_path=str(cohort_path),
         checkpoint_path=str(baseline_model_path),
@@ -28,7 +33,7 @@ def main():
         batch_size=cfg["model"]["batch_size"],
     )
 
-    print("\nEvaluating reweighted model...")
+    print("\nEvaluating reweighted model on full cohort...")
     reweighted_results = evaluate_fairness(
         cohort_path=str(cohort_path),
         checkpoint_path=str(reweighted_model_path),
@@ -57,7 +62,7 @@ def main():
     comparison.to_csv(results_dir / "fairness_comparison.csv", index=False)
 
     print("\n" + "="*80)
-    print("FAIRNESS COMPARISON RESULTS")
+    print("EXPLORATORY FULL-COHORT FAIRNESS COMPARISON RESULTS")
     print("="*80)
     print(comparison.to_string())
 

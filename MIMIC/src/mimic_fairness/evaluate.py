@@ -22,14 +22,7 @@ def evaluate_fairness(
     """
     Evaluate model fairness across groups.
 
-    Returns DataFrame with columns:
-    - fairness_group
-    - accuracy
-    - auc
-    - fnr (false negative rate)
-    - fn_count
-    - tp_count
-    - n_samples
+    Returns one row per fairness group with confusion counts and metrics.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -74,6 +67,16 @@ def evaluate_fairness(
         indices = np.flatnonzero(merged["split"].eq(split).to_numpy())
         if len(indices) == 0:
             raise ValueError(f"No rows found for split='{split}'.")
+
+        selected_rows = merged.iloc[indices]
+        selected_splits = set(selected_rows["split"].unique())
+        if selected_splits != {split}:
+            raise ValueError(
+                f"Evaluation split filter failed. Expected only {split!r}, "
+                f"found {sorted(selected_splits)}."
+            )
+        if split == "test" and selected_rows["split"].isin(["train", "val"]).any():
+            raise ValueError("Held-out test evaluation included train or val rows.")
 
     if split_path is not None:
         dataset_for_eval = torch.utils.data.Subset(dataset, indices)
@@ -140,16 +143,43 @@ def evaluate_fairness(
             auc = np.nan
 
         tn, fp, fn, tp = confusion_matrix(group_labels, group_preds, labels=[0, 1]).ravel()
+        positives = int(np.sum(group_labels == 1))
+        negatives = int(np.sum(group_labels == 0))
         fnr = fn / (fn + tp) if (fn + tp) > 0 else 0
+        fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else np.nan
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else np.nan
+        precision = tp / (tp + fp) if (tp + fp) > 0 else np.nan
+        predicted_positive_rate = (tp + fp) / len(group_labels)
 
         results.append({
             "fairness_group": group,
+            "n_samples": len(group_labels),
+            "positives": positives,
+            "negatives": negatives,
+            "TP": int(tp),
+            "FP": int(fp),
+            "TN": int(tn),
+            "FN": int(fn),
+            "tp": int(tp),
+            "fp": int(fp),
+            "tn": int(tn),
+            "fn": int(fn),
             "accuracy": acc,
+            "AUC": auc,
             "auc": auc,
+            "FNR": fnr,
             "fnr": fnr,
+            "FPR": fpr,
+            "fpr": fpr,
+            "recall": recall,
+            "sensitivity": recall,
+            "specificity": specificity,
+            "precision": precision,
+            "predicted_positive_rate": predicted_positive_rate,
+            # Backward-compatible aliases used by older scripts.
             "fn_count": int(fn),
             "tp_count": int(tp),
-            "n_samples": len(group_labels),
         })
 
     return pd.DataFrame(results)

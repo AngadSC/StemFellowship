@@ -15,6 +15,11 @@ def main():
     if not best_model_path.exists():
         raise FileNotFoundError(f"Best model not found at {best_model_path}")
 
+    print(
+        "EXPLORATORY FULL-COHORT EVALUATION: this uses all cohort rows and is "
+        "not the held-out test evaluation."
+    )
+
     output_dir = root / cfg["paths"]["outputs_dir"] / "tables"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "baseline_fairness_results.parquet"
