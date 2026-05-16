@@ -8,11 +8,13 @@ def main():
 
     label_name = cfg["active_label"]
     cohort_path = root / cfg["paths"]["interim_dir"] / f"{label_name}_cohort.parquet"
+    split_path = root / cfg["paths"]["interim_dir"] / f"{label_name}_splits.parquet"
 
     output_dir = root / cfg["paths"]["models_dir"]
 
     best_model_path = train_model(
         cohort_path=str(cohort_path),
+        split_path=str(split_path),
         model_name=cfg["model"]["base_model"],
         max_length=cfg["cohort"]["max_note_length"],
         label_column=label_name,

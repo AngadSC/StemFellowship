@@ -1,5 +1,3 @@
-import pandas as pd
-from pathlib import Path
 from mimic_fairness.paths import load_config, project_root
 from mimic_fairness.evaluate import evaluate_fairness
 from mimic_fairness.plots import plot_fairness_comparison

@@ -1,8 +1,8 @@
 import torch
 import numpy as np
+import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
-from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.amp import autocast, GradScaler
 from transformers import AutoModelForSequenceClassification
@@ -11,8 +11,52 @@ from mimic_fairness.preprocessing import load_tokenizer
 from mimic_fairness.dataset import MIMICDataset
 
 
+def _load_train_val_indices(df: pd.DataFrame, split_path: str) -> tuple[np.ndarray, np.ndarray]:
+    splits = pd.read_parquet(split_path)
+    required_columns = {"SUBJECT_ID", "HADM_ID", "split"}
+    missing_columns = required_columns.difference(splits.columns)
+    if missing_columns:
+        raise ValueError(f"Split file is missing required columns: {sorted(missing_columns)}")
+
+    split_counts = splits.groupby("SUBJECT_ID")["split"].nunique()
+    overlapping_subjects = split_counts[split_counts > 1]
+    if not overlapping_subjects.empty:
+        examples = overlapping_subjects.index[:10].tolist()
+        raise ValueError(
+            "SUBJECT_ID leakage detected across splits. "
+            f"Example overlapping SUBJECT_ID values: {examples}"
+        )
+
+    merged = df[["SUBJECT_ID", "HADM_ID"]].merge(
+        splits[["SUBJECT_ID", "HADM_ID", "split"]],
+        on=["SUBJECT_ID", "HADM_ID"],
+        how="left",
+        validate="one_to_one",
+    )
+
+    if merged["split"].isna().any():
+        missing = merged.loc[merged["split"].isna(), ["SUBJECT_ID", "HADM_ID"]].head(10)
+        raise ValueError(f"Some cohort rows are missing from split file:\n{missing}")
+
+    train_idx = np.flatnonzero(merged["split"].eq("train").to_numpy())
+    val_idx = np.flatnonzero(merged["split"].eq("val").to_numpy())
+
+    if len(train_idx) == 0 or len(val_idx) == 0:
+        raise ValueError(
+            f"Split file must contain non-empty train and val rows. "
+            f"Found train={len(train_idx)}, val={len(val_idx)}."
+        )
+
+    return train_idx, val_idx
+
+
+def _copy_model_state(model: torch.nn.Module) -> dict[str, torch.Tensor]:
+    return {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+
+
 def train_model(
     cohort_path: str,
+    split_path: str,
     model_name: str,
     max_length: int,
     label_column: str,
@@ -30,14 +74,7 @@ def train_model(
     model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
 
     dataset = MIMICDataset(cohort_path, tokenizer, max_length, label_column)
-
-    indices = np.arange(len(dataset))
-    train_idx, val_idx = train_test_split(
-        indices,
-        test_size=0.2,
-        random_state=random_seed,
-        stratify=dataset.df[label_column].values,
-    )
+    train_idx, val_idx = _load_train_val_indices(dataset.df, split_path)
 
     train_dataset = torch.utils.data.Subset(dataset, train_idx)
     val_dataset = torch.utils.data.Subset(dataset, val_idx)
@@ -95,7 +132,7 @@ def train_model(
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            best_model_state = model.state_dict().copy()
+            best_model_state = _copy_model_state(model)
 
     if best_model_state:
         model.load_state_dict(best_model_state)
@@ -109,6 +146,7 @@ def train_model(
 
 def train_model_with_weights(
     cohort_path: str,
+    split_path: str,
     model_name: str,
     max_length: int,
     label_column: str,
@@ -127,18 +165,21 @@ def train_model_with_weights(
     model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
 
     dataset = MIMICDataset(cohort_path, tokenizer, max_length, label_column)
-
-    indices = np.arange(len(dataset))
-    train_idx, val_idx = train_test_split(
-        indices,
-        test_size=0.2,
-        random_state=random_seed,
-        stratify=dataset.df[label_column].values,
-    )
+    train_idx, val_idx = _load_train_val_indices(dataset.df, split_path)
 
     train_dataset = torch.utils.data.Subset(dataset, train_idx)
     val_dataset = torch.utils.data.Subset(dataset, val_idx)
-    train_weights = sample_weights[train_idx]
+
+    if len(sample_weights) == len(dataset):
+        train_weights = sample_weights[train_idx]
+    elif len(sample_weights) == len(train_idx):
+        train_weights = sample_weights
+    else:
+        raise ValueError(
+            "sample_weights must align to either the full cohort or the train split. "
+            f"Received {len(sample_weights)} weights for {len(dataset)} cohort rows "
+            f"and {len(train_idx)} train rows."
+        )
 
     sampler = WeightedRandomSampler(
         weights=train_weights,
@@ -208,7 +249,7 @@ def train_model_with_weights(
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            best_model_state = model.state_dict().copy()
+            best_model_state = _copy_model_state(model)
 
     if best_model_state:
         model.load_state_dict(best_model_state)
