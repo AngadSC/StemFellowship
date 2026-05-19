@@ -31,7 +31,7 @@ def main():
         upweight_factor=2.0,
     )
 
-    output_dir = root / cfg["paths"]["models_dir"] / "reweighted"
+    output_dir = root / cfg["paths"]["models_dir"] / "by_disease" / label_name / "reweighted"
 
     best_model_path = train_model_with_weights(
         cohort_path=str(cohort_path),
@@ -42,9 +42,11 @@ def main():
         output_dir=str(output_dir),
         sample_weights=sample_weights,
         num_epochs=cfg["model"]["num_epochs"],
-        batch_size=cfg["model"]["batch_size"],
+        batch_size=cfg["model"].get("train_batch_size", cfg["model"]["batch_size"]),
         learning_rate=cfg["model"]["learning_rate"],
         random_seed=cfg["model"]["random_seed"],
+        gradient_accumulation_steps=cfg["model"].get("gradient_accumulation_steps", 1),
+        optimizer_step_sleep_seconds=cfg["model"].get("optimizer_step_sleep_seconds", 0.0),
     )
 
     print(f"Training complete. Reweighted model saved to: {best_model_path}")

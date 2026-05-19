@@ -25,7 +25,7 @@ def main():
 
     print(summary)
 
-    out_dir = root / cfg["paths"]["outputs_dir"] / "tables"
+    out_dir = root / cfg["paths"]["outputs_dir"] / "by_disease" / label / "tables"
     out_dir.mkdir(parents=True, exist_ok=True)
     summary.to_csv(out_dir / f"{label}_group_counts.csv", index=False)
 

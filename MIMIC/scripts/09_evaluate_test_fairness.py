@@ -105,8 +105,8 @@ def main() -> None:
     cohort_path = root / cfg["paths"]["interim_dir"] / f"{label_name}_cohort.parquet"
     split_path = root / cfg["paths"]["interim_dir"] / f"{label_name}_splits.parquet"
 
-    models_dir = root / cfg["paths"]["models_dir"]
-    baseline_model_path = models_dir / "best_model"
+    models_dir = root / cfg["paths"]["models_dir"] / "by_disease" / label_name
+    baseline_model_path = models_dir / "baseline" / "best_model"
     reweighted_model_path = models_dir / "reweighted" / "best_model"
 
     if not baseline_model_path.exists():
@@ -114,7 +114,7 @@ def main() -> None:
     if not reweighted_model_path.exists():
         raise FileNotFoundError(f"Reweighted model not found at {reweighted_model_path}")
 
-    outputs_dir = root / cfg["paths"]["outputs_dir"]
+    outputs_dir = root / cfg["paths"]["outputs_dir"] / "by_disease" / label_name
     results_dir = outputs_dir / "tables"
     plots_dir = outputs_dir / "plots"
     results_dir.mkdir(parents=True, exist_ok=True)

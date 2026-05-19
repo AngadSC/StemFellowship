@@ -1,3 +1,5 @@
+import time
+
 import torch
 import numpy as np
 import pandas as pd
@@ -54,6 +56,34 @@ def _copy_model_state(model: torch.nn.Module) -> dict[str, torch.Tensor]:
     return {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
 
 
+def _validate_training_controls(
+    batch_size: int,
+    gradient_accumulation_steps: int,
+    optimizer_step_sleep_seconds: float,
+) -> None:
+    if batch_size < 1:
+        raise ValueError(f"batch_size must be at least 1. Received {batch_size}.")
+    if gradient_accumulation_steps < 1:
+        raise ValueError(
+            "gradient_accumulation_steps must be at least 1. "
+            f"Received {gradient_accumulation_steps}."
+        )
+    if optimizer_step_sleep_seconds < 0:
+        raise ValueError(
+            "optimizer_step_sleep_seconds must be non-negative. "
+            f"Received {optimizer_step_sleep_seconds}."
+        )
+
+
+def _accumulation_window_size(
+    batch_idx: int,
+    num_batches: int,
+    gradient_accumulation_steps: int,
+) -> int:
+    window_start = (batch_idx // gradient_accumulation_steps) * gradient_accumulation_steps
+    return min(gradient_accumulation_steps, num_batches - window_start)
+
+
 def train_model(
     cohort_path: str,
     split_path: str,
@@ -66,7 +96,15 @@ def train_model(
     learning_rate: float = 2e-5,
     random_seed: int = 42,
     train_sampler=None,
+    gradient_accumulation_steps: int = 1,
+    optimizer_step_sleep_seconds: float = 0.0,
 ) -> str:
+    _validate_training_controls(
+        batch_size=batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+        optimizer_step_sleep_seconds=optimizer_step_sleep_seconds,
+    )
+
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
 
@@ -79,18 +117,34 @@ def train_model(
     train_dataset = torch.utils.data.Subset(dataset, train_idx)
     val_dataset = torch.utils.data.Subset(dataset, val_idx)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, pin_memory=True)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    pin_memory = device.type == "cuda"
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=train_sampler is None,
+        sampler=train_sampler,
+        pin_memory=pin_memory,
+    )
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, pin_memory=pin_memory)
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     loss_fn = torch.nn.CrossEntropyLoss()
-    scaler = GradScaler('cuda')
+    scaler = GradScaler("cuda", enabled=device.type == "cuda")
+
+    effective_batch_size = batch_size * gradient_accumulation_steps
+    print(
+        "Training controls: "
+        f"device={device}, micro_batch_size={batch_size}, "
+        f"gradient_accumulation_steps={gradient_accumulation_steps}, "
+        f"effective_batch_size={effective_batch_size}, "
+        f"optimizer_step_sleep_seconds={optimizer_step_sleep_seconds}"
+    )
 
     best_val_loss = float("inf")
     best_model_state = None
@@ -98,20 +152,32 @@ def train_model(
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0
-        for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1} [Train]", leave=False):
+        optimizer.zero_grad(set_to_none=True)
+        for batch_idx, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch + 1} [Train]", leave=False)):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
 
-            optimizer.zero_grad()
-            with autocast('cuda'):
+            with autocast(device_type=device.type, enabled=device.type == "cuda"):
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask)
                 loss = loss_fn(outputs.logits, labels)
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
 
             epoch_loss += loss.item()
+            accumulation_window_size = _accumulation_window_size(
+                batch_idx,
+                len(train_loader),
+                gradient_accumulation_steps,
+            )
+            scaler.scale(loss / accumulation_window_size).backward()
+
+            should_step = (batch_idx + 1) % gradient_accumulation_steps == 0
+            is_last_batch = batch_idx + 1 == len(train_loader)
+            if should_step or is_last_batch:
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad(set_to_none=True)
+                if optimizer_step_sleep_seconds:
+                    time.sleep(optimizer_step_sleep_seconds)
 
         model.eval()
         val_loss = 0
@@ -156,8 +222,16 @@ def train_model_with_weights(
     batch_size: int = 8,
     learning_rate: float = 2e-5,
     random_seed: int = 42,
+    gradient_accumulation_steps: int = 1,
+    optimizer_step_sleep_seconds: float = 0.0,
 ) -> str:
     """Train with sample weights for fairness mitigation."""
+    _validate_training_controls(
+        batch_size=batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+        optimizer_step_sleep_seconds=optimizer_step_sleep_seconds,
+    )
+
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
 
@@ -187,27 +261,40 @@ def train_model_with_weights(
         replacement=True,
     )
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    pin_memory = device.type == "cuda"
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         sampler=sampler,
+        pin_memory=pin_memory,
     )
 
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
+        pin_memory=pin_memory,
     )
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     loss_fn = torch.nn.CrossEntropyLoss()
-    scaler = GradScaler('cuda')
+    scaler = GradScaler("cuda", enabled=device.type == "cuda")
+
+    effective_batch_size = batch_size * gradient_accumulation_steps
+    print(
+        "Training controls: "
+        f"device={device}, micro_batch_size={batch_size}, "
+        f"gradient_accumulation_steps={gradient_accumulation_steps}, "
+        f"effective_batch_size={effective_batch_size}, "
+        f"optimizer_step_sleep_seconds={optimizer_step_sleep_seconds}"
+    )
 
     best_val_loss = float("inf")
     best_model_state = None
@@ -215,20 +302,32 @@ def train_model_with_weights(
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0
-        for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1} [Train]", leave=False):
+        optimizer.zero_grad(set_to_none=True)
+        for batch_idx, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch + 1} [Train]", leave=False)):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
 
-            optimizer.zero_grad()
-            with autocast('cuda'):
+            with autocast(device_type=device.type, enabled=device.type == "cuda"):
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask)
                 loss = loss_fn(outputs.logits, labels)
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
 
             epoch_loss += loss.item()
+            accumulation_window_size = _accumulation_window_size(
+                batch_idx,
+                len(train_loader),
+                gradient_accumulation_steps,
+            )
+            scaler.scale(loss / accumulation_window_size).backward()
+
+            should_step = (batch_idx + 1) % gradient_accumulation_steps == 0
+            is_last_batch = batch_idx + 1 == len(train_loader)
+            if should_step or is_last_batch:
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad(set_to_none=True)
+                if optimizer_step_sleep_seconds:
+                    time.sleep(optimizer_step_sleep_seconds)
 
         model.eval()
         val_loss = 0

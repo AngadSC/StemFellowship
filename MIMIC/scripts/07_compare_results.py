@@ -10,8 +10,8 @@ def main():
     label_name = cfg["active_label"]
     cohort_path = root / cfg["paths"]["interim_dir"] / f"{label_name}_cohort.parquet"
 
-    models_dir = root / cfg["paths"]["models_dir"]
-    baseline_model_path = models_dir / "best_model"
+    models_dir = root / cfg["paths"]["models_dir"] / "by_disease" / label_name
+    baseline_model_path = models_dir / "baseline" / "best_model"
     reweighted_model_path = models_dir / "reweighted" / "best_model"
 
     if not baseline_model_path.exists():
@@ -42,7 +42,7 @@ def main():
         batch_size=cfg["model"]["batch_size"],
     )
 
-    results_dir = root / cfg["paths"]["outputs_dir"] / "tables"
+    results_dir = root / cfg["paths"]["outputs_dir"] / "by_disease" / label_name / "tables"
     results_dir.mkdir(parents=True, exist_ok=True)
 
     baseline_results.to_parquet(results_dir / "baseline_fairness_results.parquet", index=False)
@@ -77,7 +77,7 @@ def main():
     print(f"Mean Accuracy Reweighted: {reweighted_results['accuracy'].mean():.4f}")
     print(f"Mean Accuracy Change: {(reweighted_results['accuracy'].mean() - baseline_results['accuracy'].mean()):.4f}")
 
-    plots_dir = root / cfg["paths"]["outputs_dir"] / "plots"
+    plots_dir = root / cfg["paths"]["outputs_dir"] / "by_disease" / label_name / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\nGenerating plots...")

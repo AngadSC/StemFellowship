@@ -10,7 +10,7 @@ def main():
     cohort_path = root / cfg["paths"]["interim_dir"] / f"{label_name}_cohort.parquet"
     split_path = root / cfg["paths"]["interim_dir"] / f"{label_name}_splits.parquet"
 
-    output_dir = root / cfg["paths"]["models_dir"]
+    output_dir = root / cfg["paths"]["models_dir"] / "by_disease" / label_name / "baseline"
 
     best_model_path = train_model(
         cohort_path=str(cohort_path),
@@ -20,9 +20,11 @@ def main():
         label_column=label_name,
         output_dir=str(output_dir),
         num_epochs=cfg["model"]["num_epochs"],
-        batch_size=cfg["model"]["batch_size"],
+        batch_size=cfg["model"].get("train_batch_size", cfg["model"]["batch_size"]),
         learning_rate=cfg["model"]["learning_rate"],
         random_seed=cfg["model"]["random_seed"],
+        gradient_accumulation_steps=cfg["model"].get("gradient_accumulation_steps", 1),
+        optimizer_step_sleep_seconds=cfg["model"].get("optimizer_step_sleep_seconds", 0.0),
     )
 
     print(f"Training complete. Best model saved to: {best_model_path}")

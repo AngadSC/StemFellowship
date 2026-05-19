@@ -8,7 +8,8 @@ def main() -> None:
     root = project_root()
     cfg = load_config()
 
-    results_dir = root / cfg["paths"]["outputs_dir"] / "tables"
+    label_name = cfg["active_label"]
+    results_dir = root / cfg["paths"]["outputs_dir"] / "by_disease" / label_name / "tables"
     baseline_path = results_dir / "baseline_fairness_results.parquet"
     reweighted_path = results_dir / "reweighted_fairness_results.parquet"
 

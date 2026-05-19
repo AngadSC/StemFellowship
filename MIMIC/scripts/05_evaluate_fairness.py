@@ -9,8 +9,8 @@ def main():
     label_name = cfg["active_label"]
     cohort_path = root / cfg["paths"]["interim_dir"] / f"{label_name}_cohort.parquet"
 
-    models_dir = root / cfg["paths"]["models_dir"]
-    best_model_path = models_dir / "best_model"
+    models_dir = root / cfg["paths"]["models_dir"] / "by_disease" / label_name
+    best_model_path = models_dir / "baseline" / "best_model"
 
     if not best_model_path.exists():
         raise FileNotFoundError(f"Best model not found at {best_model_path}")
@@ -20,7 +20,7 @@ def main():
         "not the held-out test evaluation."
     )
 
-    output_dir = root / cfg["paths"]["outputs_dir"] / "tables"
+    output_dir = root / cfg["paths"]["outputs_dir"] / "by_disease" / label_name / "tables"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "baseline_fairness_results.parquet"
 

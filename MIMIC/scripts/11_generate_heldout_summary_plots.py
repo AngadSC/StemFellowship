@@ -85,7 +85,8 @@ def main() -> None:
     root = project_root()
     cfg = load_config()
 
-    outputs_dir = root / cfg["paths"]["outputs_dir"]
+    label_name = cfg["active_label"]
+    outputs_dir = root / cfg["paths"]["outputs_dir"] / "by_disease" / label_name
     tables_dir = outputs_dir / "tables"
     plots_dir = outputs_dir / "plots"
 

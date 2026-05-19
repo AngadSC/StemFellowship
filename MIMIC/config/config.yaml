@@ -59,6 +59,9 @@ groups:
 model:
   base_model: emilyalsentzer/Bio_ClinicalBERT
   num_epochs: 3
-  batch_size: 32
+  batch_size: 16
+  train_batch_size: 2
+  gradient_accumulation_steps: 16
+  optimizer_step_sleep_seconds: 0.05
   learning_rate: 0.00002
   random_seed: 42

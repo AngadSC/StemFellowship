@@ -384,7 +384,8 @@ def main() -> None:
     root = project_root()
     cfg = load_config()
 
-    results_dir = root / cfg["paths"]["outputs_dir"] / "tables"
+    label_name = cfg["active_label"]
+    results_dir = root / cfg["paths"]["outputs_dir"] / "by_disease" / label_name / "tables"
     paired = _load_paired_test_predictions(results_dir)
 
     rows = []
