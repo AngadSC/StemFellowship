@@ -65,3 +65,12 @@ model:
   optimizer_step_sleep_seconds: 0.05
   learning_rate: 0.00002
   random_seed: 42
+  reweighted_default_factor: 2.0
+  reweighted_factor_grid:
+    - 1.0
+    - 1.5
+    - 2.0
+    - 3.0
+    - 5.0
+  reweighted_max_weight: 10.0
+  reweighted_normalize_weights: true

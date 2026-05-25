@@ -18,24 +18,29 @@ def compute_subgroup_weights(
     label_column: str,
     fairness_group_column: str = "fairness_group",
     upweight_factor: float = 2.0,
+    max_weight: float = 10.0,
+    normalize: bool = True,
 ) -> np.ndarray:
     """
     Upweight positive cases from underrepresented groups.
 
     Strategy: identify groups with lower positive label rates, upweight their positives.
     """
-    weights = np.ones(len(df))
+    weights = np.ones(len(df), dtype=float)
 
     group_positive_rates = df.groupby(fairness_group_column)[label_column].mean()
     mean_rate = group_positive_rates.mean()
 
-    for group in df[fairness_group_column].unique():
-        group_mask = df[fairness_group_column] == group
-        group_rate = group_positive_rates[group]
-
+    for group, group_rate in group_positive_rates.items():
         if group_rate < mean_rate:
             positive_mask = (df[fairness_group_column] == group) & (df[label_column] == 1)
             weights[positive_mask] *= upweight_factor
+
+    if max_weight is not None:
+        weights = np.minimum(weights, max_weight)
+
+    if normalize:
+        weights = weights / float(np.mean(weights))
 
     return weights
 

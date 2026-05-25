@@ -235,14 +235,17 @@ def _train_reweighted_model(
         validate="one_to_one",
     )
     train_df = train_df[train_df["split"] == "train"].copy()
+    upweight_factor = float(cfg["model"].get("reweighted_default_factor", 2.0))
     sample_weights = compute_subgroup_weights(
         train_df,
         label_column=label,
         fairness_group_column="fairness_group",
-        upweight_factor=2.0,
+        upweight_factor=upweight_factor,
+        max_weight=float(cfg["model"].get("reweighted_max_weight", 10.0)),
+        normalize=bool(cfg["model"].get("reweighted_normalize_weights", True)),
     )
 
-    print(f"[{label}] Training reweighted mitigation model...")
+    print(f"[{label}] Training reweighted mitigation model with upweight_factor={upweight_factor}...")
     train_model_with_weights(
         cohort_path=str(cohort_path),
         split_path=str(split_path),
