@@ -30,6 +30,7 @@ def main() -> None:
 
     merged["fnr_delta"] = merged["fnr_reweighted"] - merged["fnr_baseline"]
     merged["accuracy_delta"] = merged["accuracy_reweighted"] - merged["accuracy_baseline"]
+    merged["fpr_delta"] = merged["fpr_reweighted"] - merged["fpr_baseline"]
     merged["auc_delta"] = merged["auc_reweighted"] - merged["auc_baseline"]
 
     output_path = results_dir / "exploratory_full_cohort_metric_deltas.csv"
@@ -52,6 +53,9 @@ def main() -> None:
                 "fnr_baseline",
                 "fnr_reweighted",
                 "fnr_delta",
+                "fpr_baseline",
+                "fpr_reweighted",
+                "fpr_delta",
                 "accuracy_baseline",
                 "accuracy_reweighted",
                 "accuracy_delta",

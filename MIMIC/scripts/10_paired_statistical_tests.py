@@ -297,6 +297,7 @@ def _build_statistical_report(
     fnr_ztests: pd.DataFrame,
 ) -> str:
     overall_fnr = _metric_row(results, "fnr")
+    overall_fpr = _metric_row(results, "fpr")
     overall_accuracy = _metric_row(results, "accuracy")
 
     baseline_fnr_ratio = (
@@ -352,7 +353,24 @@ def _build_statistical_report(
     )
     lines.append("")
 
-    lines.append("4. Accuracy Comparison (Paired Exact Test)")
+    lines.append("4. FPR Comparison (Paired Exact Test)")
+    lines.append("-" * 80)
+    lines.append(f"Baseline FPR:         {overall_fpr['baseline_rate']:.4f}")
+    lines.append(f"Reweighted FPR:       {overall_fpr['reweighted_rate']:.4f}")
+    lines.append(
+        "FPR Change:           "
+        f"{overall_fpr['reweighted_rate'] - overall_fpr['baseline_rate']:.4f}"
+    )
+    lines.append(
+        f"p-value:               {_format_p_value(overall_fpr['p_value'])}"
+    )
+    significance = _significance_label(overall_fpr["p_value"])
+    if significance == "No":
+        significance = "No (likely due to chance)"
+    lines.append(f"Significant (alpha=0.05):  {significance}")
+    lines.append("")
+
+    lines.append("5. Accuracy Comparison (Paired Exact Test)")
     lines.append("-" * 80)
     lines.append(f"Baseline Accuracy:     {overall_accuracy['baseline_rate']:.4f}")
     lines.append(f"Reweighted Accuracy:   {overall_accuracy['reweighted_rate']:.4f}")
@@ -369,7 +387,7 @@ def _build_statistical_report(
     lines.append(f"Significant (alpha=0.05):  {significance}")
     lines.append("")
 
-    lines.append("5. Fairness Metric: Ratio of Max to Min FNR")
+    lines.append("6. Fairness Metric: Ratio of Max to Min FNR")
     lines.append("-" * 80)
     lines.append(f"Baseline FNR Ratio (max/min):     {baseline_fnr_ratio:.4f}")
     lines.append(f"Reweighted FNR Ratio (max/min):   {reweighted_fnr_ratio:.4f}")
