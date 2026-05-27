@@ -65,3 +65,8 @@ model:
   optimizer_step_sleep_seconds: 0.05
   learning_rate: 0.00002
   random_seed: 42
+
+threshold_selection:
+  rule: min_weighted_objective_at_accuracy_floor
+  accuracy_floor_drop: 0.005
+  weighted_disparity_lambda: 0.1

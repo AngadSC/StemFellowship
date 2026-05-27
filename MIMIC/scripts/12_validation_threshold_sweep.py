@@ -1,96 +1,11 @@
-import numpy as np
 import pandas as pd
-from sklearn.metrics import confusion_matrix, roc_auc_score
+from mimic_fairness.thresholding import evaluate_model_thresholds
 
 from mimic_fairness.evaluate import evaluate_fairness
 from mimic_fairness.paths import load_config, project_root
 
 
-THRESHOLDS = np.round(np.arange(0.05, 0.951, 0.005), 3)
-PRIMARY_SELECTION_RULE = "min_fnr_at_accuracy_floor"
-ACCURACY_FLOOR_DROP = 0.005
 KEY_COLUMNS = ["SUBJECT_ID", "HADM_ID"]
-
-
-def _binary_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float) -> dict:
-    y_pred = (y_prob >= threshold).astype(int)
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
-
-    positives = int(tp + fn)
-    negatives = int(tn + fp)
-    total = int(positives + negatives)
-
-    accuracy = (tp + tn) / total if total else np.nan
-    fnr = fn / positives if positives else np.nan
-    fpr = fp / negatives if negatives else np.nan
-    recall = tp / positives if positives else np.nan
-    specificity = tn / negatives if negatives else np.nan
-    precision = tp / (tp + fp) if (tp + fp) else np.nan
-    predicted_positive_rate = (tp + fp) / total if total else np.nan
-    auc = roc_auc_score(y_true, y_prob) if len(np.unique(y_true)) > 1 else np.nan
-
-    return {
-        "threshold": threshold,
-        "n_samples": total,
-        "positives": positives,
-        "negatives": negatives,
-        "tp": int(tp),
-        "fp": int(fp),
-        "tn": int(tn),
-        "fn": int(fn),
-        "accuracy": accuracy,
-        "auc": auc,
-        "fnr": fnr,
-        "fpr": fpr,
-        "recall": recall,
-        "sensitivity": recall,
-        "specificity": specificity,
-        "precision": precision,
-        "predicted_positive_rate": predicted_positive_rate,
-    }
-
-
-def _group_metrics(predictions: pd.DataFrame, threshold: float) -> pd.DataFrame:
-    rows = []
-    for group, group_df in predictions.groupby("fairness_group", sort=True):
-        metrics = _binary_metrics(
-            group_df["y_true"].to_numpy(),
-            group_df["y_prob"].to_numpy(),
-            threshold,
-        )
-        rows.append({"fairness_group": group, **metrics})
-    return pd.DataFrame(rows)
-
-
-def _sweep_thresholds(predictions: pd.DataFrame) -> pd.DataFrame:
-    y_true = predictions["y_true"].to_numpy()
-    y_prob = predictions["y_prob"].to_numpy()
-    return pd.DataFrame([_binary_metrics(y_true, y_prob, threshold) for threshold in THRESHOLDS])
-
-
-def _select_threshold(sweep: pd.DataFrame) -> pd.Series:
-    default_metrics = _binary_metrics(
-        sweep.attrs["y_true"],
-        sweep.attrs["y_prob"],
-        threshold=0.5,
-    )
-    accuracy_floor = default_metrics["accuracy"] - ACCURACY_FLOOR_DROP
-
-    candidates = sweep[sweep["accuracy"] >= accuracy_floor].copy()
-    if candidates.empty:
-        candidates = sweep.copy()
-
-    candidates = candidates.sort_values(
-        ["fnr", "accuracy", "fpr", "threshold"],
-        ascending=[True, False, True, False],
-    )
-    selected = candidates.iloc[0].copy()
-    selected["selection_rule"] = PRIMARY_SELECTION_RULE
-    selected["accuracy_floor"] = accuracy_floor
-    selected["default_threshold_accuracy"] = default_metrics["accuracy"]
-    selected["default_threshold_fnr"] = default_metrics["fnr"]
-    selected["default_threshold_fpr"] = default_metrics["fpr"]
-    return selected
 
 
 def _create_predictions(
@@ -128,52 +43,9 @@ def _create_predictions(
 
 
 def _evaluate_model_thresholds(model_name: str, val_predictions: pd.DataFrame, test_predictions: pd.DataFrame):
-    val_sweep = _sweep_thresholds(val_predictions)
-    val_sweep.attrs["y_true"] = val_predictions["y_true"].to_numpy()
-    val_sweep.attrs["y_prob"] = val_predictions["y_prob"].to_numpy()
-
-    selected = _select_threshold(val_sweep)
-    threshold = float(selected["threshold"])
-
-    val_selected = _binary_metrics(
-        val_predictions["y_true"].to_numpy(),
-        val_predictions["y_prob"].to_numpy(),
-        threshold,
+    raise NotImplementedError(
+        "Do not call _evaluate_model_thresholds directly. Use evaluate_model_thresholds from mimic_fairness.thresholding."
     )
-    test_selected = _binary_metrics(
-        test_predictions["y_true"].to_numpy(),
-        test_predictions["y_prob"].to_numpy(),
-        threshold,
-    )
-
-    val_selected.update(
-        {
-            "model": model_name,
-            "split": "val",
-            "selection_rule": PRIMARY_SELECTION_RULE,
-            "selected_on": "val",
-        }
-    )
-    test_selected.update(
-        {
-            "model": model_name,
-            "split": "test",
-            "selection_rule": PRIMARY_SELECTION_RULE,
-            "selected_on": "val",
-        }
-    )
-
-    test_group_metrics = _group_metrics(test_predictions, threshold)
-    test_group_metrics.insert(0, "model", model_name)
-    test_group_metrics.insert(1, "split", "test")
-    test_group_metrics["selection_rule"] = PRIMARY_SELECTION_RULE
-    test_group_metrics["selected_on"] = "val"
-
-    val_sweep.insert(0, "model", model_name)
-    selected = selected.to_frame().T
-    selected.insert(0, "model", model_name)
-
-    return val_sweep, selected, pd.DataFrame([val_selected, test_selected]), test_group_metrics
 
 
 def main() -> None:
@@ -230,10 +102,17 @@ def main() -> None:
             output_path=test_predictions_path,
         )
 
-        sweep, selected, metrics, group_metrics = _evaluate_model_thresholds(
+        selection_cfg = cfg.get("threshold_selection", {})
+        sweep, selected, metrics, group_metrics, _ = evaluate_model_thresholds(
             model_name,
             val_predictions,
             test_predictions,
+            selection_rule=selection_cfg.get(
+                "rule",
+                "min_weighted_objective_at_accuracy_floor",
+            ),
+            accuracy_floor_drop=selection_cfg.get("accuracy_floor_drop", 0.005),
+            weighted_disparity_lambda=selection_cfg.get("weighted_disparity_lambda", 0.1),
         )
         all_sweeps.append(sweep)
         selected_thresholds.append(selected)

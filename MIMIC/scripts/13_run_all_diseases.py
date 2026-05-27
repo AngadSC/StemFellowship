@@ -406,6 +406,11 @@ def _run_threshold_analysis(
     reweighted_test_predictions: pd.DataFrame,
     tables_dir,
 ) -> None:
+    selection_cfg = cfg.get("threshold_selection", {})
+    selection_rule = selection_cfg.get("rule", "min_weighted_objective_at_accuracy_floor")
+    accuracy_floor_drop = selection_cfg.get("accuracy_floor_drop", 0.005)
+    weighted_disparity_lambda = selection_cfg.get("weighted_disparity_lambda", 0.1)
+
     val_predictions = {
         "baseline": _create_validation_predictions(
             cfg,
@@ -441,6 +446,9 @@ def _run_threshold_analysis(
             model_name,
             val_predictions[model_name],
             test_predictions[model_name],
+            selection_rule=selection_rule,
+            accuracy_floor_drop=accuracy_floor_drop,
+            weighted_disparity_lambda=weighted_disparity_lambda,
         )
         all_sweeps.append(sweep)
         selected_thresholds.append(selected)
