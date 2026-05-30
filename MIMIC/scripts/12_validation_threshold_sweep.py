@@ -89,6 +89,7 @@ def _select_threshold(sweep: pd.DataFrame) -> pd.Series:
     selected["accuracy_floor"] = accuracy_floor
     selected["default_threshold_accuracy"] = default_metrics["accuracy"]
     selected["default_threshold_fnr"] = default_metrics["fnr"]
+    selected["default_threshold_fpr"] = default_metrics["fpr"]
     return selected
 
 

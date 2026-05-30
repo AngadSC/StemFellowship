@@ -56,6 +56,7 @@ def main():
 
     comparison["fnr_delta"] = comparison["fnr_reweighted"] - comparison["fnr_baseline"]
     comparison["accuracy_delta"] = comparison["accuracy_reweighted"] - comparison["accuracy_baseline"]
+    comparison["fpr_delta"] = comparison["fpr_reweighted"] - comparison["fpr_baseline"]
 
     comparison = comparison.sort_values("fnr_delta")
 
@@ -72,6 +73,9 @@ def main():
     print(f"Mean FNR Baseline: {baseline_results['fnr'].mean():.4f}")
     print(f"Mean FNR Reweighted: {reweighted_results['fnr'].mean():.4f}")
     print(f"Mean FNR Improvement: {(baseline_results['fnr'].mean() - reweighted_results['fnr'].mean()):.4f}")
+    print(f"Mean FPR Baseline: {baseline_results['fpr'].mean():.4f}")
+    print(f"Mean FPR Reweighted: {reweighted_results['fpr'].mean():.4f}")
+    print(f"Mean FPR Change: {(reweighted_results['fpr'].mean() - baseline_results['fpr'].mean()):.4f}")
 
     print(f"\nMean Accuracy Baseline: {baseline_results['accuracy'].mean():.4f}")
     print(f"Mean Accuracy Reweighted: {reweighted_results['accuracy'].mean():.4f}")
@@ -93,6 +97,13 @@ def main():
         reweighted_results,
         str(plots_dir / "accuracy_comparison.png"),
         metric="accuracy",
+    )
+
+    plot_fairness_comparison(
+        baseline_results,
+        reweighted_results,
+        str(plots_dir / "fpr_comparison.png"),
+        metric="fpr",
     )
 
     print(f"Results saved to {results_dir}")
