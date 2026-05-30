@@ -62,6 +62,15 @@ model:
   batch_size: 16
   train_batch_size: 2
   gradient_accumulation_steps: 16
-  optimizer_step_sleep_seconds: 0.05
+  optimizer_step_sleep_seconds: 0.0
   learning_rate: 0.00002
   random_seed: 42
+  reweighted_default_factor: 2.0
+  reweighted_factor_grid:
+    - 1.0
+    - 1.5
+    - 2.0
+    - 3.0
+    - 5.0
+  reweighted_max_weight: 10.0
+  reweighted_normalize_weights: true

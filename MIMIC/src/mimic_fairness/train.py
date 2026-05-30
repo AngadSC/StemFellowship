@@ -13,6 +13,11 @@ from mimic_fairness.preprocessing import load_tokenizer
 from mimic_fairness.dataset import MIMICDataset
 
 
+def _quiet_tqdm(iterable, **kwargs):
+    """Avoid long-running Windows console failures from frequent progress writes."""
+    return tqdm(iterable, disable=True, **kwargs)
+
+
 def _load_train_val_indices(df: pd.DataFrame, split_path: str) -> tuple[np.ndarray, np.ndarray]:
     splits = pd.read_parquet(split_path)
     required_columns = {"SUBJECT_ID", "HADM_ID", "split"}
@@ -153,7 +158,7 @@ def train_model(
         model.train()
         epoch_loss = 0
         optimizer.zero_grad(set_to_none=True)
-        for batch_idx, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch + 1} [Train]", leave=False)):
+        for batch_idx, batch in enumerate(_quiet_tqdm(train_loader, desc=f"Epoch {epoch + 1} [Train]", leave=False)):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
@@ -182,7 +187,7 @@ def train_model(
         model.eval()
         val_loss = 0
         with torch.no_grad():
-            for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1} [Val]", leave=False):
+            for batch in _quiet_tqdm(val_loader, desc=f"Epoch {epoch + 1} [Val]", leave=False):
                 input_ids = batch["input_ids"].to(device)
                 attention_mask = batch["attention_mask"].to(device)
                 labels = batch["label"].to(device)
@@ -303,7 +308,7 @@ def train_model_with_weights(
         model.train()
         epoch_loss = 0
         optimizer.zero_grad(set_to_none=True)
-        for batch_idx, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch + 1} [Train]", leave=False)):
+        for batch_idx, batch in enumerate(_quiet_tqdm(train_loader, desc=f"Epoch {epoch + 1} [Train]", leave=False)):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
@@ -332,7 +337,7 @@ def train_model_with_weights(
         model.eval()
         val_loss = 0
         with torch.no_grad():
-            for batch in tqdm(val_loader, desc=f"Epoch {epoch + 1} [Val]", leave=False):
+            for batch in _quiet_tqdm(val_loader, desc=f"Epoch {epoch + 1} [Val]", leave=False):
                 input_ids = batch["input_ids"].to(device)
                 attention_mask = batch["attention_mask"].to(device)
                 labels = batch["label"].to(device)

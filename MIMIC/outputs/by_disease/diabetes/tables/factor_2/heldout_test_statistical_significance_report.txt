@@ -1,0 +1,47 @@
+================================================================================
+STATISTICAL SIGNIFICANCE TESTS
+================================================================================
+
+1. FNR Difference Per Group (Two-Proportion Z-tests)
+--------------------------------------------------------------------------------
+Group               FNR Baseline    FNR Reweighted  p-value     
+--------------------------------------------------------------------------------
+black               0.1544          0.1812          0.3805      
+hispanic            0.1908          0.1985          0.8760      
+non_english         0.1908          0.2105          0.6675      
+other               0.1896          0.1972          0.7263      
+white_english       0.2459          0.2483          0.9109      
+
+2. Confidence Intervals for FNR (95%, Wilson)
+--------------------------------------------------------------------------------
+Group               Baseline FNR CI                 Reweighted FNR CI               
+--------------------------------------------------------------------------------
+black               (0.1178, 0.1998)                (0.1416, 0.2289)                
+hispanic            (0.1327, 0.2666)                (0.1392, 0.2749)                
+non_english         (0.1363, 0.2606)                (0.1533, 0.2821)                
+other               (0.1614, 0.2214)                (0.1686, 0.2295)                
+white_english       (0.2183, 0.2758)                (0.2205, 0.2782)                
+
+3. Overall FNR Comparison (Paired Exact Test)
+--------------------------------------------------------------------------------
+Baseline FNR:          0.2078
+Reweighted FNR:        0.2169
+FNR Reduction:         -0.0091
+p-value:               3.3778e-03
+Significant (alpha=0.05):  Yes
+
+4. Accuracy Comparison (Paired Exact Test)
+--------------------------------------------------------------------------------
+Baseline Accuracy:     0.9159
+Reweighted Accuracy:   0.9155
+Accuracy Change:       -0.0004
+p-value:               0.8614
+Significant (alpha=0.05):  No (likely due to chance)
+
+5. Fairness Metric: Ratio of Max to Min FNR
+--------------------------------------------------------------------------------
+Baseline FNR Ratio (max/min):     1.5931
+Reweighted FNR Ratio (max/min):   1.3700
+Improvement:                      0.2232
+
+================================================================================
