@@ -93,3 +93,7 @@ def main():
 
         print(f"Training complete for upweight_factor={upweight_factor}. Model saved to: {best_model_path}")
         print(f"Weight summary saved to: {summary_path}\n")
+
+
+if __name__ == "__main__":
+    main()

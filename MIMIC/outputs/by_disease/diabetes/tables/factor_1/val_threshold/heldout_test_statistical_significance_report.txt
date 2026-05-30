@@ -1,0 +1,51 @@
+==================== diabetes : upweight_factor=1 : validation-selected threshold ====================
+Upweight factor:       1
+Baseline threshold:    0.430
+Reweighted threshold:  0.375
+================================================================================
+STATISTICAL SIGNIFICANCE TESTS
+================================================================================
+
+1. FNR Difference Per Group (Two-Proportion Z-tests)
+--------------------------------------------------------------------------------
+Group               FNR Baseline    FNR Reweighted  p-value     
+--------------------------------------------------------------------------------
+black               0.1443          0.1544          0.7303      
+hispanic            0.1908          0.1679          0.6291      
+non_english         0.1908          0.1908          1.0000      
+other               0.1774          0.1835          0.7736      
+white_english       0.2249          0.2273          0.9081      
+
+2. Confidence Intervals for FNR (95%, Wilson)
+--------------------------------------------------------------------------------
+Group               Baseline FNR CI                 Reweighted FNR CI               
+--------------------------------------------------------------------------------
+black               (0.1089, 0.1887)                (0.1178, 0.1998)                
+hispanic            (0.1327, 0.2666)                (0.1136, 0.2412)                
+non_english         (0.1363, 0.2606)                (0.1363, 0.2606)                
+other               (0.1500, 0.2085)                (0.1557, 0.2150)                
+white_english       (0.1983, 0.2541)                (0.2005, 0.2565)                
+
+3. Overall FNR Comparison (Paired Exact Test)
+--------------------------------------------------------------------------------
+Baseline FNR:          0.1940
+Reweighted FNR:        0.1968
+FNR Reduction:         -0.0029
+p-value:               4.9662e-01
+Significant (alpha=0.05):  No
+
+4. Accuracy Comparison (Paired Exact Test)
+--------------------------------------------------------------------------------
+Baseline Accuracy:     0.9125
+Reweighted Accuracy:   0.9077
+Accuracy Change:       -0.0049
+p-value:               0.0072
+Significant (alpha=0.05):  Yes
+
+5. Fairness Metric: Ratio of Max to Min FNR
+--------------------------------------------------------------------------------
+Baseline FNR Ratio (max/min):     1.5589
+Reweighted FNR Ratio (max/min):   1.4723
+Improvement:                      0.0866
+
+================================================================================

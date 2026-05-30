@@ -1,0 +1,51 @@
+==================== acute_kidney_injury : upweight_factor=1 : validation-selected threshold ====================
+Upweight factor:       1
+Baseline threshold:    0.465
+Reweighted threshold:  0.460
+================================================================================
+STATISTICAL SIGNIFICANCE TESTS
+================================================================================
+
+1. FNR Difference Per Group (Two-Proportion Z-tests)
+--------------------------------------------------------------------------------
+Group               FNR Baseline    FNR Reweighted  p-value     
+--------------------------------------------------------------------------------
+black               0.3400          0.3400          1.0000      
+hispanic            0.2766          0.2340          0.6362      
+non_english         0.3704          0.3852          0.8018      
+other               0.5377          0.4868          0.1105      
+white_english       0.4244          0.3863          0.1235      
+
+2. Confidence Intervals for FNR (95%, Wilson)
+--------------------------------------------------------------------------------
+Group               Baseline FNR CI                 Reweighted FNR CI               
+--------------------------------------------------------------------------------
+black               (0.2779, 0.4081)                (0.2779, 0.4081)                
+hispanic            (0.1694, 0.4176)                (0.1360, 0.3722)                
+non_english         (0.2936, 0.4544)                (0.3074, 0.4694)                
+other               (0.4935, 0.5813)                (0.4428, 0.5309)                
+white_english       (0.3903, 0.4592)                (0.3529, 0.4208)                
+
+3. Overall FNR Comparison (Paired Exact Test)
+--------------------------------------------------------------------------------
+Baseline FNR:          0.4392
+Reweighted FNR:        0.4060
+FNR Reduction:         0.0331
+p-value:               9.5785e-04
+Significant (alpha=0.05):  Yes
+
+4. Accuracy Comparison (Paired Exact Test)
+--------------------------------------------------------------------------------
+Baseline Accuracy:     0.8319
+Reweighted Accuracy:   0.8179
+Accuracy Change:       -0.0140
+p-value:               0.0001
+Significant (alpha=0.05):  Yes
+
+5. Fairness Metric: Ratio of Max to Min FNR
+--------------------------------------------------------------------------------
+Baseline FNR Ratio (max/min):     1.9439
+Reweighted FNR Ratio (max/min):   2.0798
+Improvement:                      -0.1359
+
+================================================================================

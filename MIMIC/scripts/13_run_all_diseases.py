@@ -27,24 +27,16 @@ HELDOUT_PLOT_METRICS = [
     "predicted_positive_rate",
 ]
 KEY_COLUMNS = ["SUBJECT_ID", "HADM_ID"]
-PIPELINE_STAGES = [
-    "cohort",
-    "splits",
-    "baseline_training",
-    "reweighted_training",
-    "heldout_evaluation",
-    "default_threshold_stats",
-    "validation_threshold_sweep",
-    "validation_threshold_stats",
-]
+BASE_PIPELINE_STAGES = 3
+STAGES_PER_UPWEIGHT_FACTOR = 5
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run cohort building, splitting, baseline training, reweighted training, "
-            "held-out evaluation, paired tests, and validation-threshold analysis for "
-            "each configured diagnosis label."
+            "Run cohort building, splitting, baseline reference loading, reweighted "
+            "factor-sweep training, held-out evaluation, paired tests, and "
+            "validation-threshold analysis for each configured diagnosis label."
         )
     )
     parser.add_argument(
@@ -68,6 +60,40 @@ def _parse_args() -> argparse.Namespace:
         help="Regenerate train/val/test split files even when they already exist.",
     )
     return parser.parse_args()
+
+
+def _factor_dir_name(upweight_factor: float) -> str:
+    factor_str = f"{upweight_factor:.2f}".rstrip("0").rstrip(".")
+    return f"factor_{factor_str.replace('.', '_')}"
+
+
+def _factor_display(upweight_factor: float) -> str:
+    return f"{upweight_factor:.2f}".rstrip("0").rstrip(".")
+
+
+def _reweighted_factor_grid(cfg: dict) -> list[float]:
+    factor_grid = cfg["model"].get(
+        "reweighted_factor_grid",
+        [cfg["model"].get("reweighted_default_factor", 2.0)],
+    )
+    if isinstance(factor_grid, (int, float)):
+        factor_grid = [factor_grid]
+
+    factors = []
+    for factor in factor_grid:
+        factor = float(factor)
+        if factor not in factors:
+            factors.append(factor)
+
+    if not factors:
+        factors.append(float(cfg["model"].get("reweighted_default_factor", 2.0)))
+    return factors
+
+
+def _reweighted_model_dir(base_output_dir, upweight_factor: float, default_factor: float):
+    if upweight_factor == default_factor:
+        return base_output_dir
+    return base_output_dir / _factor_dir_name(upweight_factor)
 
 
 def _stratify_or_none(labels: pd.Series) -> pd.Series | None:
@@ -213,6 +239,7 @@ def _train_reweighted_model(
     cohort_path,
     split_path,
     reweighted_output_dir,
+    upweight_factor: float,
     skip_existing_model: bool,
 ):
     reweighted_checkpoint = reweighted_output_dir / "best_model"
@@ -225,6 +252,7 @@ def _train_reweighted_model(
         print(f"[{label}] Reusing reweighted checkpoint: {reweighted_checkpoint}")
         return reweighted_checkpoint
 
+    reweighted_output_dir.mkdir(parents=True, exist_ok=True)
     print(f"[{label}] Computing train-only subgroup weights...")
     cohort = pd.read_parquet(cohort_path)
     splits = pd.read_parquet(split_path)
@@ -235,7 +263,6 @@ def _train_reweighted_model(
         validate="one_to_one",
     )
     train_df = train_df[train_df["split"] == "train"].copy()
-    upweight_factor = float(cfg["model"].get("reweighted_default_factor", 2.0))
     sample_weights = compute_subgroup_weights(
         train_df,
         label_column=label,
@@ -244,6 +271,23 @@ def _train_reweighted_model(
         max_weight=float(cfg["model"].get("reweighted_max_weight", 10.0)),
         normalize=bool(cfg["model"].get("reweighted_normalize_weights", True)),
     )
+    summary_path = reweighted_output_dir / "reweighted_weight_summary.csv"
+    summary = (
+        train_df.assign(weight=sample_weights)
+        .groupby("fairness_group")
+        .agg(
+            n=("HADM_ID", "count"),
+            positives=(label, "sum"),
+            positive_rate=(label, "mean"),
+            mean_weight=("weight", "mean"),
+            min_weight=("weight", "min"),
+            max_weight=("weight", "max"),
+            total_weight=("weight", "sum"),
+        )
+        .reset_index()
+        .sort_values("positive_rate")
+    )
+    summary.to_csv(summary_path, index=False)
 
     print(f"[{label}] Training reweighted mitigation model with upweight_factor={upweight_factor}...")
     train_model_with_weights(
@@ -261,6 +305,7 @@ def _train_reweighted_model(
         gradient_accumulation_steps=gradient_accumulation_steps,
         optimizer_step_sleep_seconds=optimizer_step_sleep_seconds,
     )
+    print(f"[{label}] Weight summary saved to: {summary_path}")
     return reweighted_checkpoint
 
 
@@ -299,30 +344,90 @@ def _save_heldout_plots(baseline_results: pd.DataFrame, reweighted_results: pd.D
         )
 
 
-def _evaluate_heldout(
+def _validate_predictions(predictions: pd.DataFrame, split: str, path) -> None:
+    if set(predictions["split"].unique()) != {split}:
+        raise ValueError(f"{path} does not contain only split={split!r}.")
+
+    required_columns = set(KEY_COLUMNS + ["fairness_group", "y_true", "y_prob", "y_pred", "split"])
+    missing_columns = required_columns.difference(predictions.columns)
+    if missing_columns:
+        raise ValueError(f"{path} is missing columns: {sorted(missing_columns)}")
+
+
+def _load_or_create_baseline_reference(
     cfg: dict,
     label: str,
     cohort_path,
     split_path,
     baseline_checkpoint,
+    tables_dir,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    baseline_test_predictions_path = tables_dir / "heldout_test_baseline_predictions.parquet"
+    baseline_val_predictions_path = tables_dir / "val_baseline_predictions.parquet"
+    baseline_results_path = tables_dir / "heldout_test_baseline_fairness_results.parquet"
+
+    missing_paths = [
+        path
+        for path in [
+            baseline_test_predictions_path,
+            baseline_val_predictions_path,
+            baseline_results_path,
+        ]
+        if not path.exists()
+    ]
+
+    if missing_paths:
+        print(
+            f"[{label}] Missing cached baseline outputs; creating baseline reference once: "
+            + ", ".join(str(path) for path in missing_paths)
+        )
+        baseline_results = evaluate_fairness(
+            cohort_path=str(cohort_path),
+            checkpoint_path=str(baseline_checkpoint),
+            max_length=cfg["cohort"]["max_note_length"],
+            label_column=label,
+            batch_size=cfg["model"]["batch_size"],
+            split_path=str(split_path),
+            split="test",
+            predictions_output_path=str(baseline_test_predictions_path),
+        )
+        baseline_results.to_parquet(baseline_results_path, index=False)
+
+        evaluate_fairness(
+            cohort_path=str(cohort_path),
+            checkpoint_path=str(baseline_checkpoint),
+            max_length=cfg["cohort"]["max_note_length"],
+            label_column=label,
+            batch_size=cfg["model"]["batch_size"],
+            split_path=str(split_path),
+            split="val",
+            predictions_output_path=str(baseline_val_predictions_path),
+        )
+
+    baseline_results = pd.read_parquet(baseline_results_path)
+    baseline_test_predictions = pd.read_parquet(baseline_test_predictions_path)
+    baseline_val_predictions = pd.read_parquet(baseline_val_predictions_path)
+    _validate_predictions(baseline_test_predictions, "test", baseline_test_predictions_path)
+    _validate_predictions(baseline_val_predictions, "val", baseline_val_predictions_path)
+    return baseline_results, baseline_test_predictions, baseline_val_predictions
+
+
+def _evaluate_heldout(
+    cfg: dict,
+    label: str,
+    cohort_path,
+    split_path,
     reweighted_checkpoint,
+    baseline_results: pd.DataFrame,
+    baseline_predictions: pd.DataFrame,
     tables_dir,
     plots_dir,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     baseline_predictions_path = tables_dir / "heldout_test_baseline_predictions.parquet"
     reweighted_predictions_path = tables_dir / "heldout_test_reweighted_predictions.parquet"
 
-    print(f"[{label}] Evaluating baseline on held-out test...")
-    baseline_results = evaluate_fairness(
-        cohort_path=str(cohort_path),
-        checkpoint_path=str(baseline_checkpoint),
-        max_length=cfg["cohort"]["max_note_length"],
-        label_column=label,
-        batch_size=cfg["model"]["batch_size"],
-        split_path=str(split_path),
-        split="test",
-        predictions_output_path=str(baseline_predictions_path),
-    )
+    baseline_predictions.to_parquet(baseline_predictions_path, index=False)
+    baseline_results.to_parquet(tables_dir / "heldout_test_baseline_fairness_results.parquet", index=False)
 
     print(f"[{label}] Evaluating reweighted on held-out test...")
     reweighted_results = evaluate_fairness(
@@ -338,7 +443,6 @@ def _evaluate_heldout(
 
     _validate_paired_prediction_files(baseline_predictions_path, reweighted_predictions_path)
 
-    baseline_results.to_parquet(tables_dir / "heldout_test_baseline_fairness_results.parquet", index=False)
     reweighted_results.to_parquet(tables_dir / "heldout_test_reweighted_fairness_results.parquet", index=False)
 
     comparison = baseline_results.merge(
@@ -403,21 +507,16 @@ def _run_threshold_analysis(
     label: str,
     cohort_path,
     split_path,
-    baseline_checkpoint,
     reweighted_checkpoint,
+    baseline_val_predictions: pd.DataFrame,
     baseline_test_predictions: pd.DataFrame,
     reweighted_test_predictions: pd.DataFrame,
     tables_dir,
-) -> None:
+) -> pd.DataFrame:
+    val_baseline_path = tables_dir / "val_baseline_predictions.parquet"
+    baseline_val_predictions.to_parquet(val_baseline_path, index=False)
     val_predictions = {
-        "baseline": _create_validation_predictions(
-            cfg,
-            label,
-            cohort_path,
-            split_path,
-            baseline_checkpoint,
-            tables_dir / "val_baseline_predictions.parquet",
-        ),
+        "baseline": baseline_val_predictions,
         "reweighted": _create_validation_predictions(
             cfg,
             label,
@@ -470,6 +569,7 @@ def _run_threshold_analysis(
         tables_dir / f"{label}_heldout_test_group_metrics_val_threshold.csv",
         index=False,
     )
+    return pd.concat(selected_thresholds, ignore_index=True)
 
 
 def _load_stats_module(root):
@@ -480,7 +580,13 @@ def _load_stats_module(root):
     return module
 
 
-def _write_paired_significance(root, results_dir) -> None:
+def _write_paired_significance(
+    root,
+    results_dir,
+    report_heading: str | None = None,
+    metadata_lines: list[str] | None = None,
+    print_report: bool = False,
+) -> str:
     stats = _load_stats_module(root)
     paired = stats._load_paired_test_predictions(results_dir)
 
@@ -512,10 +618,49 @@ def _write_paired_significance(root, results_dir) -> None:
     ].to_csv(results_dir / "heldout_test_fnr_confidence_intervals.csv", index=False)
 
     report = stats._build_statistical_report(results, fnr_ztests)
+    if report_heading or metadata_lines:
+        header_lines = []
+        if report_heading:
+            header_lines.append(report_heading)
+        if metadata_lines:
+            header_lines.extend(metadata_lines)
+        header_lines.append("")
+        report = "\n".join(header_lines) + report
     (results_dir / "heldout_test_statistical_significance_report.txt").write_text(
         report,
         encoding="utf-8",
     )
+    if print_report:
+        print(report)
+    return report
+
+
+def _selected_threshold(selected_thresholds: pd.DataFrame, model_name: str) -> float:
+    rows = selected_thresholds[selected_thresholds["model"] == model_name]
+    if rows.empty:
+        return float("nan")
+    return float(rows.iloc[0]["threshold"])
+
+
+def _validation_report_metadata(
+    selected_thresholds: pd.DataFrame,
+    upweight_factor: float,
+) -> list[str]:
+    return [
+        f"Upweight factor:       {_factor_display(upweight_factor)}",
+        f"Baseline threshold:    {_selected_threshold(selected_thresholds, 'baseline'):.3f}",
+        f"Reweighted threshold:  {_selected_threshold(selected_thresholds, 'reweighted'):.3f}",
+    ]
+
+
+def _factor_outputs_complete(factor_tables_dir, label: str) -> bool:
+    required_paths = [
+        factor_tables_dir / "val_threshold" / "heldout_test_statistical_significance_report.txt",
+        factor_tables_dir / f"{label}_validation_selected_thresholds.csv",
+        factor_tables_dir / f"{label}_validation_threshold_selected_metrics.csv",
+        factor_tables_dir / f"{label}_heldout_test_group_metrics_val_threshold.csv",
+    ]
+    return all(path.exists() for path in required_paths)
 
 
 def _run_label(base_cfg: dict, root, label: str, args: argparse.Namespace) -> None:
@@ -538,11 +683,17 @@ def _run_label(base_cfg: dict, root, label: str, args: argparse.Namespace) -> No
     cohort_path = root / cfg["paths"]["interim_dir"] / f"{label}_cohort.parquet"
     split_path = root / cfg["paths"]["interim_dir"] / f"{label}_splits.parquet"
 
+    upweight_factors = _reweighted_factor_grid(cfg)
+    default_factor = float(cfg["model"].get("reweighted_default_factor", 2.0))
+    total_stages = BASE_PIPELINE_STAGES + (len(upweight_factors) * STAGES_PER_UPWEIGHT_FACTOR)
+    factor_summary_rows = []
+
     with tqdm(
-        total=len(PIPELINE_STAGES),
+        total=total_stages,
         desc=f"{label} pipeline",
         unit="stage",
         leave=True,
+        bar_format="{desc}: {n_fmt}/{total_fmt} stages elapsed={elapsed} remaining={remaining} {postfix}",
     ) as stage_bar:
         stage_bar.set_postfix_str("building/loading cohort")
         cohort = _build_or_load_cohort(cfg, root, label, args.rebuild_cohorts)
@@ -552,66 +703,155 @@ def _run_label(base_cfg: dict, root, label: str, args: argparse.Namespace) -> No
         _build_or_load_splits(cfg, root, label, cohort, args.resplit)
         stage_bar.update(1)
 
-        stage_bar.set_postfix_str("training baseline")
+        stage_bar.set_postfix_str("loading/creating baseline reference")
         baseline_checkpoint = _train_baseline_model(
             cfg,
             label,
             cohort_path,
             split_path,
             baseline_output_dir,
-            args.skip_existing_models,
+            skip_existing_model=True,
         )
-        stage_bar.update(1)
-
-        stage_bar.set_postfix_str("training reweighted mitigation")
-        reweighted_checkpoint = _train_reweighted_model(
-            cfg,
-            label,
-            cohort_path,
-            split_path,
-            reweighted_output_dir,
-            args.skip_existing_models,
-        )
-        stage_bar.update(1)
-
-        stage_bar.set_postfix_str("held-out evaluation at threshold 0.5")
-        _, _, baseline_test_predictions, reweighted_test_predictions = _evaluate_heldout(
+        baseline_results, baseline_test_predictions, baseline_val_predictions = _load_or_create_baseline_reference(
             cfg,
             label,
             cohort_path,
             split_path,
             baseline_checkpoint,
-            reweighted_checkpoint,
-            tables_dir,
-            plots_dir,
-        )
-        stage_bar.update(1)
-
-        stage_bar.set_postfix_str("paired stats at threshold 0.5")
-        print(f"[{label}] Running paired statistical tests at threshold 0.5...")
-        _write_paired_significance(root, tables_dir)
-        stage_bar.update(1)
-
-        stage_bar.set_postfix_str("validation threshold sweep")
-        print(f"[{label}] Running validation-selected threshold sweep...")
-        _run_threshold_analysis(
-            cfg,
-            label,
-            cohort_path,
-            split_path,
-            baseline_checkpoint,
-            reweighted_checkpoint,
-            baseline_test_predictions,
-            reweighted_test_predictions,
             tables_dir,
         )
         stage_bar.update(1)
 
-        stage_bar.set_postfix_str("paired stats with validation thresholds")
-        print(f"[{label}] Running paired statistical tests with validation-selected thresholds...")
-        _write_paired_significance(root, tables_dir / "val_threshold")
-        stage_bar.update(1)
+        for upweight_factor in upweight_factors:
+            factor_name = _factor_dir_name(upweight_factor)
+            factor_display = _factor_display(upweight_factor)
+            factor_tables_dir = tables_dir / factor_name
+            factor_plots_dir = plots_dir / factor_name
+            factor_tables_dir.mkdir(parents=True, exist_ok=True)
+            factor_plots_dir.mkdir(parents=True, exist_ok=True)
+            factor_reweighted_output_dir = _reweighted_model_dir(
+                reweighted_output_dir,
+                upweight_factor,
+                default_factor,
+            )
+            factor_checkpoint = factor_reweighted_output_dir / "best_model"
 
+            if (
+                args.skip_existing_models
+                and factor_checkpoint.exists()
+                and _factor_outputs_complete(factor_tables_dir, label)
+            ):
+                print(
+                    f"[{label}] Reusing complete factor outputs for "
+                    f"upweight_factor={factor_display}: {factor_tables_dir}"
+                )
+                selected_thresholds = pd.read_csv(
+                    factor_tables_dir / f"{label}_validation_selected_thresholds.csv"
+                )
+                factor_summary_rows.append(
+                    {
+                        "label": label,
+                        "upweight_factor": upweight_factor,
+                        "baseline_validation_threshold": _selected_threshold(
+                            selected_thresholds,
+                            "baseline",
+                        ),
+                        "reweighted_validation_threshold": _selected_threshold(
+                            selected_thresholds,
+                            "reweighted",
+                        ),
+                        "results_dir": str(factor_tables_dir),
+                    }
+                )
+                stage_bar.update(STAGES_PER_UPWEIGHT_FACTOR)
+                continue
+
+            stage_bar.set_postfix_str(f"training reweighted factor {factor_display}")
+            reweighted_checkpoint = _train_reweighted_model(
+                cfg,
+                label,
+                cohort_path,
+                split_path,
+                factor_reweighted_output_dir,
+                upweight_factor,
+                args.skip_existing_models,
+            )
+            stage_bar.update(1)
+
+            stage_bar.set_postfix_str(f"held-out evaluation factor {factor_display}")
+            _, _, baseline_test_predictions, reweighted_test_predictions = _evaluate_heldout(
+                cfg,
+                label,
+                cohort_path,
+                split_path,
+                reweighted_checkpoint,
+                baseline_results,
+                baseline_test_predictions,
+                factor_tables_dir,
+                factor_plots_dir,
+            )
+            stage_bar.update(1)
+
+            stage_bar.set_postfix_str(f"paired stats at threshold 0.5 factor {factor_display}")
+            print(
+                f"[{label}] Running paired statistical tests at threshold 0.5 "
+                f"for upweight_factor={factor_display}..."
+            )
+            _write_paired_significance(root, factor_tables_dir)
+            stage_bar.update(1)
+
+            stage_bar.set_postfix_str(f"validation threshold sweep factor {factor_display}")
+            print(
+                f"[{label}] Running validation-selected threshold sweep "
+                f"for upweight_factor={factor_display}..."
+            )
+            selected_thresholds = _run_threshold_analysis(
+                cfg,
+                label,
+                cohort_path,
+                split_path,
+                reweighted_checkpoint,
+                baseline_val_predictions,
+                baseline_test_predictions,
+                reweighted_test_predictions,
+                factor_tables_dir,
+            )
+            stage_bar.update(1)
+
+            baseline_threshold = _selected_threshold(selected_thresholds, "baseline")
+            reweighted_threshold = _selected_threshold(selected_thresholds, "reweighted")
+            factor_summary_rows.append(
+                {
+                    "label": label,
+                    "upweight_factor": upweight_factor,
+                    "baseline_validation_threshold": baseline_threshold,
+                    "reweighted_validation_threshold": reweighted_threshold,
+                    "results_dir": str(factor_tables_dir),
+                }
+            )
+
+            stage_bar.set_postfix_str(f"paired stats with validation thresholds factor {factor_display}")
+            print(
+                f"[{label}] Running paired statistical tests with validation-selected "
+                f"thresholds for upweight_factor={factor_display}..."
+            )
+            report_heading = (
+                f"{'=' * 20} {label} : upweight_factor={factor_display} : "
+                f"validation-selected threshold {'=' * 20}"
+            )
+            _write_paired_significance(
+                root,
+                factor_tables_dir / "val_threshold",
+                report_heading=report_heading,
+                metadata_lines=_validation_report_metadata(selected_thresholds, upweight_factor),
+                print_report=True,
+            )
+            stage_bar.update(1)
+
+    pd.DataFrame(factor_summary_rows).to_csv(
+        tables_dir / f"{label}_upweight_factor_threshold_summary.csv",
+        index=False,
+    )
     print(f"[{label}] Complete. Results: {disease_outputs_dir}")
 
 
@@ -625,7 +865,12 @@ def main() -> None:
     if unknown_labels:
         raise ValueError(f"Unknown labels requested: {unknown_labels}")
 
-    for label in tqdm(labels, desc="All diagnoses", unit="disease"):
+    for label in tqdm(
+        labels,
+        desc="All diagnoses",
+        unit="disease",
+        bar_format="{desc}: {n_fmt}/{total_fmt} diseases elapsed={elapsed} remaining={remaining}",
+    ):
         _run_label(cfg, root, label, args)
 
     print("\nAll requested diagnoses complete.")
